@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "934931371264",
+    "project_id": "mlartest",
+    "storage_bucket": "mlartest.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:934931371264:android:62274d46ce48a91ca60fe5",
+        "android_client_info": {
+          "package_name": "ru.efremov.mlartest"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "934931371264-759kahmfuq5916m1jmqdsdl6spefagr6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB55Nbj7W4VvogozLGLL0hcmUF-REXWOGA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "934931371264-759kahmfuq5916m1jmqdsdl6spefagr6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
