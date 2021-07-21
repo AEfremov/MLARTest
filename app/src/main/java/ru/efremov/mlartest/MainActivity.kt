@@ -1,25 +1,29 @@
 package ru.efremov.mlartest
 
+import android.content.Intent
 import android.graphics.Bitmap
-import androidx.appcompat.app.AppCompatActivity
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat.NV21
+import android.graphics.Rect
+import android.graphics.YuvImage
+import android.media.Image
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.Surface
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 import com.google.ar.core.*
-import com.google.ar.core.R
 import com.google.ar.core.exceptions.*
 import com.google.ar.sceneform.FrameTime
 import com.google.ar.sceneform.Scene
-import com.google.ar.sceneform.rendering.ViewRenderable
 import com.google.firebase.FirebaseApp
 import com.google.mlkit.vision.barcode.Barcode
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import ru.efremov.mlartest.databinding.ActivityMainBinding
-import java.nio.ByteBuffer
-import java.util.concurrent.CompletableFuture
+import java.io.ByteArrayOutputStream
 
 class MainActivity :
     AppCompatActivity(),
@@ -37,6 +41,9 @@ class MainActivity :
     private lateinit var cameraId: String
     private var displayRotationHelper: DisplayRotationHelper? = null
     private val edgeDetector: EdgeDetector = EdgeDetector()
+
+    private var videoUrl = "https://giftsolitaire.com/static/videotest.mp4"
+    private var qrCodeDataObtained = false
 
     private val options = BarcodeScannerOptions.Builder()
         .setBarcodeFormats(
@@ -71,26 +78,6 @@ class MainActivity :
         }
     }
 
-    override fun onStop() {
-        super.onStop()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-    }
-
-    fun Frame.tryAcquireCameraImage() = try {
-        acquireCameraImage()
-    } catch (e: NotYetAvailableException) {
-        null
-    } catch (e: Throwable) {
-        throw e
-    }
-
-    companion object {
-
-    }
-
     override fun onUpdate(frameTime: FrameTime?) {
         if (session == null) {
             return
@@ -99,8 +86,12 @@ class MainActivity :
         val frame: Frame = _binding.arSceneView.arFrame ?: return
 
         val cameraImage = frame.tryAcquireCameraImage()
+
         if (cameraImage != null) {
-            Log.d("cameraImage", "${cameraImage.height} ${cameraImage.width} ${cameraImage.timestamp}")
+            Log.d(
+                "cameraImage",
+                "${cameraImage.height} ${cameraImage.width} ${cameraImage.timestamp}"
+            )
 
             if (cameraImage.format != ImageFormat.YUV_420_888) {
                 throw IllegalArgumentException(
@@ -108,49 +99,104 @@ class MainActivity :
                 )
             }
 
-            val processedImageBytesGrayscale: ByteBuffer =
-                edgeDetector.detect(
-                    cameraImage.width,
-                    cameraImage.height,
-                    cameraImage.planes[0].rowStride,
-                    cameraImage.planes[0].buffer
-                )
+            if (!qrCodeDataObtained) {
 
-            val bitmap = Bitmap.createBitmap(
-                cameraImage.width,
-                cameraImage.height,
-                Bitmap.Config.ALPHA_8
-            )
-            processedImageBytesGrayscale.rewind()
-            bitmap.copyPixelsFromBuffer(processedImageBytesGrayscale)
+                cameraId = session?.cameraConfig?.cameraId!!
+                val rotationDegrees =
+                    displayRotationHelper?.getCameraSensorToDisplayRotation(cameraId)
+                val bitmapFromCameraImage = cameraImage.toBitmapExtended()
+//                _binding.imageView.setImageBitmap(bitmapFromCameraImage)
+                val visionImage =
+                    InputImage.fromBitmap(bitmapFromCameraImage, rotationDegrees ?: 0)
 
-            cameraId = session?.cameraConfig?.cameraId!!
-            val rotationDegrees = displayRotationHelper?.getCameraSensorToDisplayRotation(cameraId)
-//            val visionImage = InputImage.fromBitmap(bitmap, rotationDegrees!!)
-            val visionImage = InputImage.fromBitmap(bitmap, 0)
-            val scanner = BarcodeScanning.getClient(options)
+                val scanner = BarcodeScanning.getClient(options)
+                scanner.process(visionImage)
+                    .addOnSuccessListener { barcodes ->
+                        Log.d("addOnSuccessListener", barcodes.toString())
+                        if (barcodes.isNotEmpty()) {
+                            qrCodeDataObtained = true
+                            for (barcode in barcodes) {
+                                Log.e(
+                                    "Log",
+                                    "QR Code: " + barcode.displayValue
+                                ) //Returns barcode value in a user-friendly format.
+                                Log.e(
+                                    "Log",
+                                    "Raw Value: " + barcode.rawValue
+                                ) //Returns barcode value as it was encoded in the barcode.
+                                Log.e(
+                                    "Log",
+                                    "Code Type: " + barcode.valueType
+                                ) //This will tell you the type of your barcode
 
-            scanner.process(visionImage)
-                .addOnSuccessListener { barcodes ->
-                    Log.d("addOnSuccessListener", barcodes.toString())
-                }
-                .addOnFailureListener {
-                    it.printStackTrace()
-                    Log.d("addOnFailureListener", it.message.toString())
-                }
-                .addOnCanceledListener {
-                    Log.d("addOnCanceledListener", "cancel")
-                }
-                .addOnCompleteListener {
-                    Log.d("addOnCompleteListener", it.toString())
-                }
+                                val bounds = barcode.boundingBox
+                                val corners = barcode.cornerPoints
+                                val rawValue = barcode.rawValue
 
-            try {
-                cameraImage.close()
-            } catch (t: Throwable) {
-                t.printStackTrace()
+                                when (barcode.valueType) {
+                                    Barcode.TYPE_URL -> {
+                                        videoUrl = barcode.url?.url ?: ""
+
+                                        val i = Intent(Intent.ACTION_VIEW)
+                                        i.data = Uri.parse(videoUrl)
+                                        startActivity(i)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .addOnFailureListener {
+                        it.printStackTrace()
+                        Log.d("addOnFailureListener", it.message.toString())
+                    }
+                    .addOnCanceledListener {
+                        Log.d("addOnCanceledListener", "cancel")
+                    }
+                    .addOnCompleteListener {
+                        cameraImage.close()
+                        Log.d("addOnCompleteListener", it.toString())
+                    }
             }
         }
+
+        try {
+            cameraImage?.close()
+        } catch (t: Throwable) {
+            t.printStackTrace()
+        }
+    }
+
+    fun Image.toBitmapExtended(): Bitmap {
+        val planes: Array<Image.Plane> = planes
+        val yBuffer = planes[0].buffer
+        val uBuffer = planes[1].buffer
+        val vBuffer = planes[2].buffer
+
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+
+        val nv21 = ByteArray(ySize + uSize + vSize)
+        // U and V are swapped
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+
+        val yuvImage = YuvImage(nv21, NV21, width, height, null)
+        val out = ByteArrayOutputStream()
+        yuvImage.compressToJpeg(Rect(0, 0, yuvImage.width, yuvImage.height), 75, out)
+
+        val imageBytes = out.toByteArray()
+
+        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+    }
+
+    fun Frame.tryAcquireCameraImage() = try {
+        acquireCameraImage()
+    } catch (e: NotYetAvailableException) {
+        null
+    } catch (e: Throwable) {
+        throw e
     }
 
     private fun rotationDegreesToFirebaseRotation(rotationDegrees: Int): Int {
